@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import Spinner from "./spinner";
 
 export type FilterOption = {
   id: string;
@@ -48,6 +49,7 @@ interface DataTableProps<TData, TValue> {
   searchPlaceholder?: string;
   searchable?: boolean;
   pageSize?: number;
+  isLoading?: boolean;
   className?: string;
   emptyMessage?: string;
   onRowClick?: (row: Row<TData>) => void;
@@ -60,6 +62,7 @@ export function DataTable<TData, TValue>({
   searchPlaceholder = "Search...",
   searchable = true,
   pageSize = 10,
+  isLoading,
   className,
   emptyMessage = "No results.",
   onRowClick,
@@ -121,7 +124,11 @@ export function DataTable<TData, TValue>({
     setGlobalFilter("");
   };
 
-  return (
+  return isLoading ? (
+    <div className="flex items-center justify-center h-64">
+      <Spinner />
+    </div>
+  ) : data ? (
     <div className={cn("space-y-4", className)}>
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         {searchable && (
@@ -282,6 +289,15 @@ export function DataTable<TData, TValue>({
           </div>
         </div>
       )}
+    </div>
+  ) : (
+    <div
+      className={cn(
+        "flex items-center justify-center h-64 text-muted-foreground",
+        className
+      )}
+    >
+      {emptyMessage}
     </div>
   );
 }

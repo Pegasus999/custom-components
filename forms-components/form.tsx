@@ -1,6 +1,5 @@
-"use client";
-
 import {
+  DefaultValues,
   FormProvider,
   useForm,
   type FieldValues,
@@ -12,16 +11,19 @@ import { ZodType } from "zod";
 interface FormWrapperProps<T extends FieldValues> {
   schema: ZodType<T>;
   onSubmit: SubmitHandler<T>;
+  defaultValues?: DefaultValues<T>;
   children: React.ReactNode;
 }
 
 export function FormWrapper<T extends FieldValues>({
   schema,
   onSubmit,
+  defaultValues,
   children,
 }: FormWrapperProps<T>) {
   const methods = useForm<T>({
     resolver: zodResolver(schema),
+    defaultValues,
   });
 
   return (

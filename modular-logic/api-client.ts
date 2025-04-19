@@ -1,55 +1,62 @@
 import { toast } from "sonner";
+import axios, { AxiosError, AxiosRequestConfig, AxiosResponse } from "axios";
 
-type ApiCallOptions<T> = {
-  request: () => Promise<Response>;
-  onSuccess?: (data: Response) => void;
-  onRedirect?: (url: string) => void;
-  onError?: (err: unknown) => void;
+export const api = axios.create({
+  baseURL: "/api",
+  withCredentials: true,
+
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+type RequestMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+interface ApiCallOptions<T> {
+  url: string;
+  method?: RequestMethod;
+  data?: string | FormData;
+  config?: AxiosRequestConfig;
   successMessage?: string;
   errorMessage?: string;
-};
+  onSuccess?: (response: AxiosResponse<T>) => void;
+  onError?: (err: AxiosError | unknown) => void;
+  onRedirect?: (url: string) => void;
+}
 
 export async function handleApiRequest<T>({
-  request,
+  url,
+  method = "GET",
+  data,
+  config,
+  successMessage = "Success",
+  errorMessage = "Something went wrong",
   onSuccess,
   onError,
   onRedirect,
-  successMessage = "Success",
-  errorMessage = "Something went wrong",
 }: ApiCallOptions<T>) {
   try {
-    const data = await request();
-    if (!data.ok) {
-      throw new Error("Network response was not ok");
-    }
-
-    toast.success(successMessage, {
-      style: {
-        backgroundColor: "green",
-        color: "white",
-      },
-    });
-    if (data.redirected) {
-      onRedirect?.(data.url);
-    }
-
-    onSuccess?.(data);
-    return data;
-  } catch (err: unknown) {
-    console.log(err);
-    let message = errorMessage;
-
-    if (err instanceof Error && err.message) {
-      message = err.message;
-    }
-
-    toast.error(message, {
-      style: {
-        backgroundColor: "red",
-        color: "white",
-      },
+    const response = await api.request<T>({
+      url,
+      method,
+      data,
+      ...config,
     });
 
+    if ((response.data as { redirectTo?: string }).redirectTo) {
+      onRedirect?.(
+        (response.data as { redirectTo?: string }).redirectTo as string
+      );
+      return response.data;
+    }
+    toast.success(successMessage);
+    onSuccess?.(response);
+    return response.data;
+  } catch (err: any) {
+    console.error(err);
+    const message = (err.response?.data?.message as string) || errorMessage;
+
+    toast.error(message);
     onError?.(err);
     return null;
   }

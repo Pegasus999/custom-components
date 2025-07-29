@@ -1,6 +1,6 @@
 "use client";
 
-import type React from "react";
+import React from "react";
 import { useState } from "react";
 import {
   type ColumnDef,
@@ -33,12 +33,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import Spinner from "./spinner";
+import Spinner from "@/components/spinner";
+import { useLocale } from "next-intl";
 
 export type FilterOption = {
   id: string;
   label: string;
-  component: React.ReactNode;
+  component: React.ReactElement<{
+    value?: string | number | boolean;
+    onChange?: (value: string | number | boolean) => void;
+  }>;
   value?: string | number | boolean;
 };
 
@@ -72,6 +76,9 @@ export function DataTable<TData, TValue>({
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
 
+  const locale = useLocale();
+  const isRTL = locale === "ar";
+
   const table = useReactTable({
     data,
     columns,
@@ -94,32 +101,81 @@ export function DataTable<TData, TValue>({
     },
   });
 
-  const handleFilterChange = (filterId: string, value: any) => {
-    // Add to active filters if not already there
-    if (!activeFilters.includes(filterId)) {
+  const handleFilterChange = (
+    filterId: string,
+    value: string | number | boolean
+  ) => {
+    // Extract the column ID from the filter ID (e.g., "status" from "status.filter")
+    const columnId = filterId.split(".")[0];
+
+    // Update active filters
+    if (value === "all" || value === "") {
+      setActiveFilters(activeFilters.filter((id) => id !== filterId));
+    } else if (!activeFilters.includes(filterId)) {
       setActiveFilters([...activeFilters, filterId]);
     }
 
-    // Find the filter
+    // Update filter value
     const filter = filters.find((f) => f.id === filterId);
     if (filter) {
-      // Update the filter value
       filter.value = value;
+    }
 
-      // Apply the filter to the column
-      const [columnId] = filterId.split(".");
-      table.getColumn(columnId)?.setFilterValue(value);
+    // Apply filter to table column - try both id and accessorKey
+    let column = table.getColumn(columnId);
+    if (!column) {
+      // If not found by id, try to find by accessorKey
+      const allColumns = table.getAllColumns();
+      column = allColumns.find((col) => {
+        const accessorKey = (col.columnDef as any).accessorKey;
+        return col.id === columnId || accessorKey === columnId;
+      });
+    }
+
+    if (column) {
+      if (value === "all" || value === "") {
+        column.setFilterValue(undefined);
+      } else {
+        column.setFilterValue(value);
+      }
+    } else {
+      console.warn(
+        `Column with id or accessorKey "${columnId}" not found for filter "${filterId}"`
+      );
     }
   };
 
   const clearFilter = (filterId: string) => {
     setActiveFilters(activeFilters.filter((id) => id !== filterId));
-    const [columnId] = filterId.split(".");
-    table.getColumn(columnId)?.setFilterValue(undefined);
+
+    // Clear the filter value
+    const filter = filters.find((f) => f.id === filterId);
+    if (filter) {
+      filter.value = undefined;
+    }
+
+    // Clear the column filter
+    const columnId = filterId.split(".")[0];
+    let column = table.getColumn(columnId);
+    if (!column) {
+      // If not found by id, try to find by accessorKey
+      const allColumns = table.getAllColumns();
+      column = allColumns.find((col) => {
+        const accessorKey = (col.columnDef as any).accessorKey;
+        return col.id === columnId || accessorKey === columnId;
+      });
+    }
+    column?.setFilterValue(undefined);
   };
 
   const clearAllFilters = () => {
     setActiveFilters([]);
+
+    // Clear all filter values
+    filters.forEach((filter) => {
+      filter.value = undefined;
+    });
+
     table.resetColumnFilters();
     setGlobalFilter("");
   };
@@ -129,22 +185,35 @@ export function DataTable<TData, TValue>({
       <Spinner />
     </div>
   ) : data ? (
-    <div className={cn("space-y-4", className)}>
-      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+    <div className={cn("space-y-4", className)} dir={isRTL ? "rtl" : "ltr"}>
+      <div
+        className={cn(
+          "flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between",
+          isRTL && "sm:flex-row-reverse"
+        )}
+      >
         {searchable && (
           <div className="relative w-full sm:max-w-sm">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search
+              className={cn(
+                "absolute top-2.5 h-4 w-4 text-muted-foreground",
+                isRTL ? "right-2.5" : "left-2.5"
+              )}
+            />
             <Input
               placeholder={searchPlaceholder}
               value={globalFilter}
               onChange={(e) => setGlobalFilter(e.target.value)}
-              className="pl-8"
+              className={isRTL ? "pr-8" : "pl-8"}
             />
             {globalFilter && (
               <Button
                 variant="ghost"
                 size="sm"
-                className="absolute right-0 top-0 h-full px-3"
+                className={cn(
+                  "absolute top-0 h-full px-3",
+                  isRTL ? "left-0" : "right-0"
+                )}
                 onClick={() => setGlobalFilter("")}
               >
                 <X className="h-4 w-4" />
@@ -155,25 +224,6 @@ export function DataTable<TData, TValue>({
 
         {filters.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9">
-                  <SlidersHorizontal className="mr-2 h-4 w-4" />
-                  Filters
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-[220px]">
-                <div className="p-2 grid gap-2">
-                  {filters.map((filter) => (
-                    <div key={filter.id} className="grid gap-1">
-                      <div className="text-sm font-medium">{filter.label}</div>
-                      {filter.component}
-                    </div>
-                  ))}
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
             {activeFilters.length > 0 && (
               <>
                 <div className="flex flex-wrap gap-2">
@@ -189,7 +239,7 @@ export function DataTable<TData, TValue>({
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-auto p-0 ml-1"
+                          className={cn("h-auto p-0", isRTL ? "mr-1" : "ml-1")}
                           onClick={() => clearFilter(filterId)}
                         >
                           <X className="h-3 w-3" />
@@ -208,17 +258,48 @@ export function DataTable<TData, TValue>({
                 </Button>
               </>
             )}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9">
+                  <SlidersHorizontal
+                    className={cn("h-4 w-4", isRTL ? "ml-2" : "mr-2")}
+                  />
+                  Filters
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align={isRTL ? "start" : "end"}
+                className="w-[220px]"
+              >
+                <div className="p-2 grid gap-2">
+                  {filters.map((filter) => (
+                    <div key={filter.id} className="grid gap-1">
+                      <div className="text-sm font-medium">{filter.label}</div>
+                      {React.cloneElement(filter.component, {
+                        value: filter.value,
+                        onChange: (value: string | number | boolean) =>
+                          handleFilterChange(filter.id, value),
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
       </div>
 
       <div className="rounded-md border">
-        <Table>
+        <Table className={isRTL ? "text-right" : "text-left"}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
+                  <TableHead
+                    key={header.id}
+                    className={isRTL ? "text-right" : "text-left"}
+                  >
                     {header.isPlaceholder
                       ? null
                       : flexRender(
@@ -240,7 +321,10 @@ export function DataTable<TData, TValue>({
                   onClick={() => onRowClick?.(row)}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
+                    <TableCell
+                      key={cell.id}
+                      className={isRTL ? "text-right" : "text-left"}
+                    >
                       {flexRender(
                         cell.column.columnDef.cell,
                         cell.getContext()
@@ -264,12 +348,22 @@ export function DataTable<TData, TValue>({
       </div>
 
       {table.getPageCount() > 1 && (
-        <div className="flex items-center justify-between">
+        <div
+          className={cn(
+            "flex items-center justify-between",
+            isRTL && "flex-row-reverse"
+          )}
+        >
           <div className="text-sm text-muted-foreground">
             Showing <strong>{table.getRowModel().rows.length}</strong> of{" "}
             <strong>{data.length}</strong> items
           </div>
-          <div className="flex items-center space-x-2">
+          <div
+            className={cn(
+              "flex items-center space-x-2",
+              isRTL && "space-x-reverse"
+            )}
+          >
             <Button
               variant="outline"
               size="sm"
